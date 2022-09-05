@@ -2,6 +2,7 @@ from email import header
 from os import listdir, getcwd, system
 from os.path import isfile, join
 from getpass import getpass
+from tkinter import E
 import requests
 import warnings
 # from collections import namedtuple
@@ -11,12 +12,13 @@ import pandas as pd
 
 # TODO
 # 1) decorators - get_file, task_start/end
+# 2) don't add stocks already with IDs
 
 global attrib_dict
 
 attrib_dict = {
     'POI name': 'name',
-    'POI ID': 'stockable_id',
+    'POI ID': 'id',
     'POI SysID': 'sys_id',
     'Link': 'url',
     'Format': 'format',
@@ -48,24 +50,25 @@ attrib_dict = {
 class Protein:
     
     def __init__(self, data: dict) -> None:
-        self.ws_name = data.get("ws_name", "")
-        self.name = data.get("name", "")
-        self.prot_id = data.get("prot_id", "")
+        self.ws_name = data.get("ws_name", None)
+        self.name = data.get("name", None)
+        self.id = data.get("id", None)
+        self.sys_id = data.get("sys_id", None)
         self.description = data.get("description", "")
-        self.owner_id = data.get("owner_id", "")
-        self.alternative_name = data.get("alternative_name", "")
-        self.gene = data.get("gene", "")
-        self.species = data.get("species", "")
-        self.mutations = data.get("mutations", "")
-        self.chemical_modifications = data.get("chemical_modifications", "")
-        self.tag = data.get("tag", "")
-        self.purification_method = data.get("purification_method", "")
-        self.mw = data.get("mw", "")
-        extinction_ox = data.get("extinction_ox", "")
-        extinction_red = data.get("extinction_red", "")
+        self.owner_id = data.get("owner_id", None)
+        self.alternative_name = data.get("alternative_name", None)
+        self.gene = data.get("gene", None)
+        self.species = data.get("species", None)
+        self.mutations = data.get("mutations", None)
+        self.chemical_modifications = data.get("chemical_modifications", None)
+        self.tag = data.get("tag", None)
+        self.purification_method = data.get("purification_method", None)
+        self.mw = data.get("mw", None)
+        extinction_ox = data.get("extinction_ox", None)
+        extinction_red = data.get("extinction_red", None)
         self.extinction_coefficient_280nm = f'{extinction_ox} (Ox) / {extinction_red} (Red)'
-        self.storage_temperature = data.get("storage_temperature", "")
-        self.sequence = data.get("sequence", "")
+        self.storage_temperature = data.get("storage_temperature", None)
+        self.sequence = data.get("sequence", None)
 
     def __generate_prot_item(self) -> dict:
         
@@ -86,7 +89,7 @@ class Protein:
                      
             ]
         
-        item = dict((k, v) for k, v in self.__dict__.items() if k in item_list)
+        item = dict((k, v) for k, v in self.__dict__.items() if k in item_list and v is not None)
         return item
 
     def row_gen(self, ws, min_row: int, min_col: int, n_row=None,  n_col=None, i=0):
@@ -136,38 +139,39 @@ class Protein:
         
         return header   
                 
-    def create_record(self):
+    def create_new_record(self):
         
         url = "https://my.labguru.com/api/v1/proteins"
         body = {"token": TOKEN,
                 "item": self.__generate_prot_item()}
-
-    # TODO Turn on
-    
-        # session = requests.post(url, json=body)
+   
+        session = requests.post(url, json=body)
             
-        # if session.status_code == 201:
-        #     response = session.json()
-        #     self.prot_id = response.get("id", "")
-        #     self.uuid = response.get("uuid", "")
-        #     self.sys_id = response.get("sys_id", "")
-        #     self.url = response.get("url", "")
-        #     self.class_name = response.get("class_name", "")
-        #     print(f'{self.sys_id:>10s} | {self.name:<50s} - New protein entry added')
-            
-        # else:
-        #     print(f'Error while handling {self.name} - Code {session.status_code}')
+        if session.status_code == 201:
+            try:
+                response = session.json()
+                self.id = response.get("id", None)
+                self.uuid = response.get("uuid", None)
+                self.sys_id = response.get("sys_id", None)
+                if (url := response.get("url", None)):
+                    self.url = f'https://my.labguru.com/{url}'
+                else:
+                    self.url = ""
+                self.class_name = response.get("class_name", None)
+                print(f'{self.sys_id:>10s} | {self.name:<50s} - New protein entry added')
+            except Exception as e:
+                print(e)   
+        else:
+            print(f'Error while handling {self.name} - Code {session.status_code}')
 
-    def update_record(self):
-        url = f"https://my.labguru.com/api/v1/proteins/{self.prot_id}"
+    def update_lg_record(self):
+        url = f"https://my.labguru.com/api/v1/proteins/{self.id}"
         body = {"token": TOKEN,
                 "item": self.__generate_prot_item()}
     
         session = requests.put(url, json=body)
-            
-        if session.status_code == 201:
-            print(f'{self.sys_id:>10s} | {self.name:<50s} - Labguru protein record updated')
-            
+        if session.status_code == 200:
+            print(f'{self.sys_id:>10s} | {self.name:<30s} - Labguru protein record updated')
         else:
             print(f'Error while handling {self.name} - Code {session.status_code}')
 
@@ -193,23 +197,39 @@ class Protein:
         """
         
         """
+        
+        def validate_stock(row):
+            # Check stock row for required values
+            try:
+                box_id = row["Box ID"] is not None
+                stock_name = row["Stock name"] is not None
+                volume = row["Stock volume"] is not None
+                conditions = [box_id, stock_name, volume]
+                return all(conditions)
+            except Exception as e:
+                print(e)
+                return False
+        
+        
         for index, row in df.iterrows():
-            if (box_id := row["Box ID"]) is not None:
-                stock_id = row["Stock ID"]
+            row = row.fillna("")
+            if validate_stock(row):
+                if (stock_id := row["Stock ID"]):
+                    stock_id = int(stock_id)
                 item = {"name": row["Stock name"],
-                        "storage_id": int(box_id),
+                        "storage_id": int(row["Box ID"]),
                         "storage_type": "System::Storage::Box",
                         "stockable_type": "Biocollections::Protein",
-                        "stockable_id": self.prot_id,
+                        "stockable_id": self.id,
                         "description": row["Description"],
                         # "barcode": "",
                         # "stored_by": "",
-                        "concentration": row["Concentration"],
+                        "concentration": str(round(row["Concentration"], 3)),
                         "concentration_prefix": "",
                         "concentration_unit_id": 9, # mg/mL
                         "concentration_exponent": "",
                         "concentration_remarks": "",
-                        "volume": int(row["Stock volume"]),
+                        "volume": str(round(row["Stock volume"], 0)),
                         "volume_prefix": "",
                         "volume_unit_id": 8, # uL
                         "volume_exponent": "",
@@ -234,46 +254,53 @@ class Protein:
         url = 'https://my.labguru.com/api/v1/stocks'
         
         for i, stock_id, item in stock_items:
-            body = {'token': TOKEN,
-                    'item': item}
+            if stock_id is None:
+                body = {'token': TOKEN,
+                        'item': item}
 
-            box_id = item["storage_id"]
-            print(item)
-       
-            session = requests.post(url, json=body)
-            if session.status_code == 201:
-                response = session.json()
+                box_id = item["storage_id"]
+                print(item)
+        
+                session = requests.post(url, json=body)
+                if session.status_code == 201:
+                    response = session.json()
+                    
+                    stock_id = response['id']
+                    position = response['position']
+                    box_name = response['box']['name']
                 
-                stock_id = response['id']
-                position = response['position']
-                box_name = response['box']['name']
-            
-                new_stock = {
-                    'index': i + 1,
-                    'id': (stock_id, f'https://my.labguru.com/storage/stocks/{stock_id}'),
-                    'box': (box_name, f'https://my.labguru.com/storage/boxes/{box_id}'),
-                    'position': position, 
-                }
-                self.added_stocks.append(new_stock)
-                
-                print(f'\tStock {i} (ID: {new_stock["id"][0]:>6}) - Box: {new_stock["box"][0]}, Position: {new_stock["position"]}')
-            else:
-                    print(f'Error while handling {self.name}: Stock {i} - Code {session.status_code}')      
+                    new_stock = {
+                        'index': i + 1,
+                        'id': (stock_id, f'https://my.labguru.com/storage/stocks/{stock_id}'),
+                        'box': (box_name, f'https://my.labguru.com/storage/boxes/{box_id}'),
+                        'position': position, 
+                    }
+                    self.added_stocks.append(new_stock)
+                    
+                    print(f'\tStock {i} (ID: {new_stock["id"][0]:>6}) - Box: {new_stock["box"][0]}, Position: {new_stock["position"]}')
+                else:
+                        print(f'Error while handling {self.name}: Stock {i} - Code {session.status_code}')      
 
-    def update_stocks(self, wb):
+    def update_lg_stocks(self, wb):
                                 
             stock_df = self.get_stock_df(wb)
             stock_items = self.__generate_stock_items(stock_df)
 
             for i, stock_id, item in stock_items:
-                url = f'https://my.labguru.com/api/v1/stocks/{stock_id}'
+                url = f'https://my.labguru.com/api/v1/stocks/{stock_id:}'
                 body = {'token': TOKEN,
                         'item': item}
                 session = requests.put(url, json=body)
-                if session.status_code == 201:                  
+                if session.status_code == 200:                  
                     print(f'\tStock {i} (ID: {stock_id:>6}) - stock attributes updated')
                 else:
                     print(f'Error while handling {self.name}: Stock {i} - Code {session.status_code}')    
+
+    def update_excel_record(wb):
+        pass
+        
+    def update_excel_stocks(wb):
+        pass
 
     def update_sheet_prot(self, wb):
         ws = wb[self.ws_name]
@@ -288,23 +315,21 @@ class Protein:
             attrib, value = cells[0].value, cells[1].value
 
             if attrib is not None and value is None:
-                print(attrib_dict[attrib])
                 new_value = prot_dict.get(attrib_dict[attrib], "")
-                print(attrib, new_value)
                 try:
-                    if 'https:' not in new_value:
+                    if 'link' not in attrib.lower():
+                        print(attrib, new_value)
                         ws.cell(row=i, column=2).value = new_value
                     else:
                         ws.cell(row=i, column=2).value = 'LINK'
                         ws.cell(row=i, column=2).hyperlink = new_value
                 except TypeError as e:
-                    pass
+                    print(e)
         
     def update_sheet_stocks(self, wb):
         ws = wb[self.ws_name]
 
         header = self.get_stock_header(ws)
-        print(header)
         
         for stock in self.added_stocks:
             row = stock['index']
@@ -313,7 +338,6 @@ class Protein:
                 column = header[name]
                 attrib = attrib_dict[name]
                 value = stock[attrib]
-                print(f'Row: {row:>3}\tColumn: {column:>3}')
                 if isinstance(value, tuple):
                     value, hyperlink = value
                     ws.cell(row=row, column=column).value = value
@@ -326,14 +350,12 @@ def main():
     system('cls')
     global TOKEN
     global PB_ALL
-    global TEST_MODE 
-    
-    TEST_MODE = False
-    # token = get_token()
-    TOKEN = 'token'
-    PB_ALL = r'P:\_research group folders\PT Proteins\_PT_stock_creator' # TODO
 
-    warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
+    # TOKEN = get_token(test_mode=True)
+    TOKEN = 'token'
+    PB_ALL = r'P:\_research group folders\PT Proteins\_PT_stock_creator'
+
+    # warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl') #TODO unhash
 
     while True:
         system('cls')
@@ -342,9 +364,11 @@ def main():
                 generate_template],
             '2': ['Add new protein records and stocks to Labguru',
                 add_to_lg],
-            '3': ['Update existing Labguru records and stocks',
+            '3': ['Update Labguru records and stocks from excel',
                 update_to_lg],
-            '4': ['Create excel file for label printing',
+            '4': ['Update excel records and stocks from Labguru',
+                update_from_lg],
+            '5': ['Create excel file for label printing',
                 create_label_xlsx]
                 }
 
@@ -463,14 +487,14 @@ def update_workbook(mypath, file, prot_list):
 
 # API requests
 
-def get_token(token=None):
+def get_token(token=None, test_mode=False):
     if token is None:
         print('\nEnter Labguru credentials: name (n.surname) and password')
         while True:
 
             if test_mode is True:
-                name = 'LG_User1@purebiologics.com'
-                password = 'LG_user1'
+                name = 'LG_User7@purebiologics.com'
+                password = 'LG_user7'
             else:
                 name = str(input('Name: ')).lower() + '@purebiologics.com'
                 password = str(getpass('Password: '))
@@ -493,12 +517,13 @@ def get_token(token=None):
     return token
 
 # TODO Move to Protein and refactor
-def get_protein_data(ws, attrib_dict: dict) -> dict:
+def get_protein_data(ws) -> dict:
 
     protein_data = {'ws_name': ws.title}
 
     for row in ws.iter_rows(min_row=0,
                             min_col=0,
+                            # max_row=100,
                             max_col=2,
                             values_only=True):
         if row[0] is not None:
@@ -541,10 +566,10 @@ def add_to_lg():
     
     wb = load_workbook(join(mypath, file), data_only=True)
     for ws in wb.sheetnames:
-        protein_data = get_protein_data(wb[ws], attrib_dict)
+        protein_data = get_protein_data(wb[ws])
         protein = Protein(protein_data)
-        if not protein.prot_id:
-            protein.create_record()
+        if protein.id is None:
+            protein.create_new_record()
             prot_count += 1
             
         protein.create_stocks(wb)
@@ -561,7 +586,7 @@ def add_to_lg():
     
     task_end()
 
-# 3) Update existing records
+# 3) Update existing records in Labguru
 
 def update_to_lg():
 
@@ -573,16 +598,40 @@ def update_to_lg():
     
     wb = load_workbook(join(mypath, file), data_only=True)
     for ws in wb.sheetnames:
-        protein_data = get_protein_data(wb[ws], attrib_dict)
+        protein_data = get_protein_data(wb[ws])
         protein = Protein(protein_data)
-        if not protein.prot_id:
-            protein.update_record()
-            prot_count += 1
-            
-        protein.update_stocks(wb) 
+        if protein.id is not None:
+            protein.update_lg_record()
+        protein.update_lg_stocks(wb) 
     wb.close()
 
-# 4) Labels
+    task_end()
+
+# 4) Update excel file from Labguru records
+
+def update_from_lg():
+
+    mypath, file = get_path_file('xlsx')
+    if file is None:
+        return None
+    
+    task_start(file)
+    
+    prot_list = []
+    
+    wb = load_workbook(join(mypath, file), data_only=True)
+    for ws in wb.sheetnames:
+        protein_data = get_protein_data(wb[ws])
+        protein = Protein(protein_data)
+        if protein.id is not None:
+            protein.update_excel(wb)
+            
+        protein.update_excel_stocks(wb)
+        prot_list.append(protein)
+        
+        update_workbook(mypath, file, prot_list)
+
+# 5) Labels
 
 def create_label_xlsx():
       
@@ -596,15 +645,22 @@ def create_label_xlsx():
     task_start(file)
     
     wb = load_workbook(join(mypath, file), data_only=True)
-    columns = ['Stock ID', 'Stock name', 'Concentration', 'Stock volume', 'Stock mass']
+    columns = {'Stock ID': int,
+               'Stock name': str,
+               'Concentration': float,
+               'Stock volume': int,
+               'Stock mass': int,
+               'Box name': str,
+               'Position': str}
     dfs = []
     label_file = file.replace('.xlsx', '_labels.xlsx')
     
     for ws in wb.sheetnames:
-        protein_data = get_protein_data(wb, ws, attrib_dict)
+        protein_data = get_protein_data(wb[ws])
         protein = Protein(protein_data)
-        stock_df = protein.get_stock_df(wb)
-        dfs.append((ws, stock_df.loc[:, columns]))
+        stock_df = protein.get_stock_df(wb).astype(columns)
+        stock_df['Concentration'] = stock_df['Concentration'].map(lambda x: f'{x:.3f}')
+        dfs.append((ws, stock_df.loc[:, columns.keys()]))
     
     with pd.ExcelWriter(label_file) as writer:
         for ws, df in dfs:
