@@ -1,349 +1,21 @@
-from email import header
 from os import listdir, getcwd, system
 from os.path import isfile, join
 from getpass import getpass
-from tkinter import E
+from re import findall
 import requests
 import warnings
-# from collections import namedtuple
 
 from openpyxl import load_workbook
 import pandas as pd
 
+from src.classes import Protein, attrib_dict
+
 # TODO
 # 1) decorators - get_file, task_start/end
 # 2) don't add stocks already with IDs
-
-global attrib_dict
-
-attrib_dict = {
-    'POI name': 'name',
-    'POI ID': 'id',
-    'POI SysID': 'sys_id',
-    'Link': 'url',
-    'Format': 'format',
-    'Tag': 'tag',
-    'Length': 'len',
-    'MW': 'mw',
-    'pI': 'pI',
-    'A0.1% (Ox)': 'extinction_ox',
-    'A0.1% (Red)': 'extinction_red',
-    'Concentration': 'concentration',
-    'Total volume': 'vol_total',
-    'Total mass': 'mass_total',
-    'Description': 'description',
-    'Stock ID': 'id',
-    'Stock name': 'name',
-    'Stock volume': 'volume',
-    'Stock mass': 'weight',
-    'Box ID': 'storage_id',
-    'Box name': 'box',
-    'Position': 'position',
-    'Description': 'description',
-    'Purification method': 'purification_method',
-    'Storage buffer': 'storage buffer',
-    'Source': 'species',
-    'Sequence': 'sequence'
-}
-
-
-class Protein:
-    
-    def __init__(self, data: dict) -> None:
-        self.ws_name = data.get("ws_name", None)
-        self.name = data.get("name", None)
-        self.id = data.get("id", None)
-        self.sys_id = data.get("sys_id", None)
-        self.description = data.get("description", "")
-        self.owner_id = data.get("owner_id", None)
-        self.alternative_name = data.get("alternative_name", None)
-        self.gene = data.get("gene", None)
-        self.species = data.get("species", None)
-        self.mutations = data.get("mutations", None)
-        self.chemical_modifications = data.get("chemical_modifications", None)
-        self.tag = data.get("tag", None)
-        self.purification_method = data.get("purification_method", None)
-        self.mw = data.get("mw", None)
-        extinction_ox = data.get("extinction_ox", None)
-        extinction_red = data.get("extinction_red", None)
-        self.extinction_coefficient_280nm = f'{extinction_ox} (Ox) / {extinction_red} (Red)'
-        self.storage_temperature = data.get("storage_temperature", None)
-        self.sequence = data.get("sequence", None)
-
-    def __generate_prot_item(self) -> dict:
-        
-        item_list = ["name",
-                     "description",
-                     "owner_id",
-                     "alternative_name",
-                     "gene", "species",
-                     "mutations",
-                     "chemical_modifications", 
-                     "tag",
-                     "purification_method",
-                     "mw",
-                     "extinction_coefficient_280nm",
-                     "storage_buffer",
-                     "storage_temperature",
-                     "sequence",
-                     
-            ]
-        
-        item = dict((k, v) for k, v in self.__dict__.items() if k in item_list and v is not None)
-        return item
-
-    def row_gen(self, ws, min_row: int, min_col: int, n_row=None,  n_col=None, i=0):
-        """
-        generator which retuns i and row list
-        """
-        max_row = min_row+n_row if n_row is not None else n_row
-        max_col = min_col+n_col if n_col is not None else n_col
-        
-        for row in ws.iter_rows(
-                min_row=min_row, 
-                min_col=min_col, 
-                max_row=max_row,
-                max_col=max_col):
-            i += 1
-            yield i, row
-
-    def col_gen(self, ws, min_row: int, min_col: int, n_row=None, n_col=None, i=0):
-        """
-        generator which retuns i and row list
-        """
-        max_row = min_row+n_row if n_row is not None else n_row
-        max_col = min_col+n_col if n_col is not None else n_col
-        
-        for row in ws.iter_cols(
-                min_row=min_row, 
-                min_col=min_col, 
-                max_row=max_row,
-                max_col=max_col):
-            i += 1
-            yield i, row
-
-    def get_stock_header(self, ws) -> dict:
-        min_row = 0
-        min_col = 5
-        n_row = 0
-        
-        header = {}
-        
-        for i, col in self.col_gen(
-            ws=ws,      
-            min_row=min_row, 
-            n_row=n_row, 
-            min_col=min_col,
-            i=min_col-1):
-            header[col[0].value] = i
-        
-        return header   
-                
-    def create_new_record(self):
-        
-        url = "https://my.labguru.com/api/v1/proteins"
-        body = {"token": TOKEN,
-                "item": self.__generate_prot_item()}
-   
-        session = requests.post(url, json=body)
-            
-        if session.status_code == 201:
-            try:
-                response = session.json()
-                self.id = response.get("id", None)
-                self.uuid = response.get("uuid", None)
-                self.sys_id = response.get("sys_id", None)
-                if (url := response.get("url", None)):
-                    self.url = f'https://my.labguru.com/{url}'
-                else:
-                    self.url = ""
-                self.class_name = response.get("class_name", None)
-                print(f'{self.sys_id:>10s} | {self.name:<50s} - New protein entry added')
-            except Exception as e:
-                print(e)   
-        else:
-            print(f'Error while handling {self.name} - Code {session.status_code}')
-
-    def update_lg_record(self):
-        url = f"https://my.labguru.com/api/v1/proteins/{self.id}"
-        body = {"token": TOKEN,
-                "item": self.__generate_prot_item()}
-    
-        session = requests.put(url, json=body)
-        if session.status_code == 200:
-            print(f'{self.sys_id:>10s} | {self.name:<30s} - Labguru protein record updated')
-        else:
-            print(f'Error while handling {self.name} - Code {session.status_code}')
-
-    def get_stock_df(self, wb):
-        min_row = 0
-        n_row = 100
-        min_col = 5
-        n_col = 9
-        
-        ws = wb[self.ws_name]
-        
-        data = [[i.value for i in j] for j in ws.iter_rows(
-        min_row=min_row, 
-        min_col=min_col, 
-        max_row=min_row+n_row-1,
-        max_col=min_col+n_col-1)
-            ]
-        
-        stock_df = pd.DataFrame(data=data[1:], columns=data[0]).dropna(how="all")
-        return stock_df
-
-    def __generate_stock_items(self, df: pd.DataFrame):
-        """
-        
-        """
-        
-        def validate_stock(row):
-            # Check stock row for required values
-            try:
-                box_id = row["Box ID"] is not None
-                stock_name = row["Stock name"] is not None
-                volume = row["Stock volume"] is not None
-                conditions = [box_id, stock_name, volume]
-                return all(conditions)
-            except Exception as e:
-                print(e)
-                return False
-        
-        
-        for index, row in df.iterrows():
-            row = row.fillna("")
-            if validate_stock(row):
-                if (stock_id := row["Stock ID"]):
-                    stock_id = int(stock_id)
-                item = {"name": row["Stock name"],
-                        "storage_id": int(row["Box ID"]),
-                        "storage_type": "System::Storage::Box",
-                        "stockable_type": "Biocollections::Protein",
-                        "stockable_id": self.id,
-                        "description": row["Description"],
-                        # "barcode": "",
-                        # "stored_by": "",
-                        "concentration": str(round(row["Concentration"], 3)),
-                        "concentration_prefix": "",
-                        "concentration_unit_id": 9, # mg/mL
-                        "concentration_exponent": "",
-                        "concentration_remarks": "",
-                        "volume": str(round(row["Stock volume"], 0)),
-                        "volume_prefix": "",
-                        "volume_unit_id": 8, # uL
-                        "volume_exponent": "",
-                        "volume_remarks": "",
-                        # "weight": "",
-                        # "weight_prefix": "",
-                        # "weight_unit_id": 1,
-                        # "weight_exponent": "25",
-                        # "weight_remarks": "weight remarks"
-                    }
-                
-                yield index+1, stock_id, item
-            else:
-                continue
-
-    def create_stocks(self, wb):
-                
-        self.added_stocks = []
-        
-        stock_df = self.get_stock_df(wb)
-        stock_items = self.__generate_stock_items(stock_df)
-        url = 'https://my.labguru.com/api/v1/stocks'
-        
-        for i, stock_id, item in stock_items:
-            if stock_id is None:
-                body = {'token': TOKEN,
-                        'item': item}
-
-                box_id = item["storage_id"]
-                print(item)
-        
-                session = requests.post(url, json=body)
-                if session.status_code == 201:
-                    response = session.json()
-                    
-                    stock_id = response['id']
-                    position = response['position']
-                    box_name = response['box']['name']
-                
-                    new_stock = {
-                        'index': i + 1,
-                        'id': (stock_id, f'https://my.labguru.com/storage/stocks/{stock_id}'),
-                        'box': (box_name, f'https://my.labguru.com/storage/boxes/{box_id}'),
-                        'position': position, 
-                    }
-                    self.added_stocks.append(new_stock)
-                    
-                    print(f'\tStock {i} (ID: {new_stock["id"][0]:>6}) - Box: {new_stock["box"][0]}, Position: {new_stock["position"]}')
-                else:
-                        print(f'Error while handling {self.name}: Stock {i} - Code {session.status_code}')      
-
-    def update_lg_stocks(self, wb):
-                                
-            stock_df = self.get_stock_df(wb)
-            stock_items = self.__generate_stock_items(stock_df)
-
-            for i, stock_id, item in stock_items:
-                url = f'https://my.labguru.com/api/v1/stocks/{stock_id:}'
-                body = {'token': TOKEN,
-                        'item': item}
-                session = requests.put(url, json=body)
-                if session.status_code == 200:                  
-                    print(f'\tStock {i} (ID: {stock_id:>6}) - stock attributes updated')
-                else:
-                    print(f'Error while handling {self.name}: Stock {i} - Code {session.status_code}')    
-
-    def update_excel_record(wb):
-        pass
-        
-    def update_excel_stocks(wb):
-        pass
-
-    def update_sheet_prot(self, wb):
-        ws = wb[self.ws_name]
-        prot_dict = dict((k, v) for k, v in self.__dict__.items())
-        for i, cells in self.row_gen(
-            ws=ws,
-            min_row=0,
-            min_col=0,
-            n_col=2
-            ):
-
-            attrib, value = cells[0].value, cells[1].value
-
-            if attrib is not None and value is None:
-                new_value = prot_dict.get(attrib_dict[attrib], "")
-                try:
-                    if 'link' not in attrib.lower():
-                        print(attrib, new_value)
-                        ws.cell(row=i, column=2).value = new_value
-                    else:
-                        ws.cell(row=i, column=2).value = 'LINK'
-                        ws.cell(row=i, column=2).hyperlink = new_value
-                except TypeError as e:
-                    print(e)
-        
-    def update_sheet_stocks(self, wb):
-        ws = wb[self.ws_name]
-
-        header = self.get_stock_header(ws)
-        
-        for stock in self.added_stocks:
-            row = stock['index']
-            columns = ['Stock ID', 'Box name', 'Position']
-            for name in columns:
-                column = header[name]
-                attrib = attrib_dict[name]
-                value = stock[attrib]
-                if isinstance(value, tuple):
-                    value, hyperlink = value
-                    ws.cell(row=row, column=column).value = value
-                    ws.cell(row=row, column=column).hyperlink = hyperlink
-                else:
-                    ws.cell(row=row, column=column).value = value
+# 3) update excel from LG
+# 4) select sheets for update from/to LG
+# 5) if sequence - calculate mass, len, pI, A0.1%
 
 
 def main():
@@ -351,11 +23,13 @@ def main():
     global TOKEN
     global PB_ALL
 
-    # TOKEN = get_token(test_mode=True)
-    TOKEN = 'token'
+    test_mode = select_mode()
+
+    TOKEN = get_token(test_mode=test_mode)
+    # TOKEN = 'token'
     PB_ALL = r'P:\_research group folders\PT Proteins\_PT_stock_creator'
 
-    # warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl') #TODO unhash
+    warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
 
     while True:
         system('cls')
@@ -375,7 +49,7 @@ def main():
         # Print menu
         print_menu(menu_dict)
 
-        user_input = input('\nTask number: ')
+        user_input = input('\nSelect task number: ')
         
         if user_input.lower() == "q":
             break
@@ -388,6 +62,16 @@ def main():
             system('pause')
 
 # Helpers
+
+def select_mode():
+    while True:
+        mode_selection = input('Test mode (Y/N): ').lower()
+        if 'y' in mode_selection:
+            return True
+        elif 'n' in mode_selection:
+            return False
+        else:
+            print('---< Wrong input. Try again >---'.center(80))
 
 def print_menu(menu_dict):
         print('/ PT Stock creator \\'.center(80, '_'), '\n')
@@ -424,7 +108,7 @@ def print_task(func):
 def get_path_file(ext: str):
     mypath = getcwd()
     xlsx_list = scan_files(mypath, ext)
-    file = choose_file(mypath, xlsx_list, ext)
+    file = choose_file(xlsx_list, ext)
     if file is None:
         return mypath, None
 
@@ -443,11 +127,13 @@ def check_filename(path, file: str, ext: str):
     conditions = [is_file, is_xlsx, not_temp]
     return all(conditions)
 
-def choose_file(path, file_list: list, ext: str):
+def choose_file(file_list: list, ext: str):
     print('/ Select file \\'.center(80, '_'), '\n', sep='')
+    
     xlsx_dict = {str(i): file for i, file in enumerate(file_list, 1)}    
     for i, file in xlsx_dict.items():
         print(f'{i.rjust(2)})', file.replace(f'.{ext}', ''), sep=" ")
+        
     print('\n', 'Q - Return to menu')
     print(''.center(80, '_'), '\n', sep='')
     
@@ -461,6 +147,7 @@ def choose_file(path, file_list: list, ext: str):
             print('---< Wrong input. Try again >---'.center(80))
 
     system('cls')
+    
     return xlsx_dict[file_i]
 
 def scan_genebank(path):
@@ -475,15 +162,51 @@ def update_workbook(mypath, file, prot_list):
                 prot.update_sheet_prot(wb)
                 prot.update_sheet_stocks(wb)
             wb.save(join(mypath, file))
-            print(f'\nFile updated:          {file}')
-            break
         except PermissionError:
             print(f'---< Unable to save changes in {file} >---'.center(80))
             print('Close the file and continue'.center(80))
             system('pause')
+        else:
+            print(f'\nFile updated:\t\t {file}')
+            break
         finally:
             wb.close()
 
+def select_sheets(wb):
+    print('\nSheets:')
+    for i, sheet in enumerate(wb.sheetnames):
+        print(f'   {i+1:>2d}) {sheet}')
+    while True:
+        try:
+            selection = input('\nEnter sheet numbers or "a" to select all: ').lower()
+            selection = list(findall(r"[\d]+|a", selection))
+            if 'a' in selection:
+                print()
+                return wb.sheetnames
+            elif (sheets := [wb.sheetnames[int(x)-1] for x in selection]):
+                print()
+                return sheets
+            else:
+                print('---< Wrong input. Try again >---'.center(80))
+        except IndexError:
+            print('---< Wrong input. Try again >---'.center(80))
+            
+def protein_from_sheet_gen(wb):
+    ws_selection = select_sheets(wb)
+    for ws_name in ws_selection:
+        ws = wb[ws_name]
+        protein_data = get_protein_data(ws)
+        yield Protein(protein_data, TOKEN)
+
+def if_calc_params():
+    while True:
+        resp = input('Calculate protein parameters for proteins with added sequence? (Y/N): ').lower()
+        if 'y' in resp:
+            return True
+        elif 'n' in resp:
+            return False
+        else:
+            print('---< Wrong input. Try again >---'.center(80))
 
 # API requests
 
@@ -521,13 +244,18 @@ def get_protein_data(ws) -> dict:
 
     protein_data = {'ws_name': ws.title}
 
-    for row in ws.iter_rows(min_row=0,
+    for attrib_name, value, *row in ws.iter_rows(min_row=0,
                             min_col=0,
                             # max_row=100,
                             max_col=2,
                             values_only=True):
-        if row[0] is not None:
-            protein_data[attrib_dict[row[0]]] = row[1]
+        try:
+            if attrib_name is not None:
+                lg_name = attrib_dict.get(attrib_name, None)
+                if lg_name is not None:
+                    protein_data[lg_name] = value
+        except KeyError as e:
+            print(e)
     return protein_data
 
 
@@ -554,7 +282,7 @@ def add_to_lg():
     """
     
     """
-       
+    
     mypath, file = get_path_file('xlsx')
     if file is None:
         return None
@@ -563,16 +291,22 @@ def add_to_lg():
     
     prot_list = []
     prot_count = 0
+    params_flag = if_calc_params() # TODO add to method
     
     wb = load_workbook(join(mypath, file), data_only=True)
-    for ws in wb.sheetnames:
-        protein_data = get_protein_data(wb[ws])
-        protein = Protein(protein_data)
+    # ws_selection = select_sheets(wb)
+    # for ws_name in ws_selection:
+    #     ws = wb[ws_name]
+    #     protein_data = get_protein_data(ws)
+    #     protein = Protein(protein_data, TOKEN)
+    for protein in protein_from_sheet_gen(wb):
+        if params_flag:
+            protein.calc_params()
         if protein.id is None:
             protein.create_new_record()
             prot_count += 1
             
-        protein.create_stocks(wb)
+        protein.create_stocks(file)
         prot_list.append(protein)
         
         update_workbook(mypath, file, prot_list)
@@ -582,7 +316,7 @@ def add_to_lg():
     wb.close()
 
     print(f'Protein entries created: {prot_count}')
-    print(f'Stocks added:            {stock_count:}\n')
+    print(f'Stocks added:\t\t {stock_count:}\n')
     
     task_end()
 
@@ -597,12 +331,10 @@ def update_to_lg():
     task_start(file)
     
     wb = load_workbook(join(mypath, file), data_only=True)
-    for ws in wb.sheetnames:
-        protein_data = get_protein_data(wb[ws])
-        protein = Protein(protein_data)
+    for protein in protein_from_sheet_gen(wb):
         if protein.id is not None:
             protein.update_lg_record()
-        protein.update_lg_stocks(wb) 
+        protein.update_lg_stocks(file) # TODO wb->ws ?
     wb.close()
 
     task_end()
@@ -620,16 +352,16 @@ def update_from_lg():
     prot_list = []
     
     wb = load_workbook(join(mypath, file), data_only=True)
-    for ws in wb.sheetnames:
-        protein_data = get_protein_data(wb[ws])
-        protein = Protein(protein_data)
+    for protein in protein_from_sheet_gen(wb):
         if protein.id is not None:
             protein.update_excel(wb)
             
-        protein.update_excel_stocks(wb)
+        protein.update_excel_stocks(file)
         prot_list.append(protein)
         
         update_workbook(mypath, file, prot_list)
+
+    task_end()
 
 # 5) Labels
 
@@ -638,7 +370,7 @@ def create_label_xlsx():
     mypath = getcwd()
     ext = 'xlsx'
     xlsx_list = scan_files(mypath, ext)
-    file = choose_file(mypath, xlsx_list, ext)
+    file = choose_file(xlsx_list, ext)
     if file is None:
         return None
     
@@ -655,19 +387,26 @@ def create_label_xlsx():
     dfs = []
     label_file = file.replace('.xlsx', '_labels.xlsx')
     
-    for ws in wb.sheetnames:
-        protein_data = get_protein_data(wb[ws])
-        protein = Protein(protein_data)
-        stock_df = protein.get_stock_df(wb).astype(columns)
+    # TODO turn into generator
+    
+    for protein in protein_from_sheet_gen(wb):
+        stock_df = protein.get_stock_df(file).astype(columns)
         stock_df['Concentration'] = stock_df['Concentration'].map(lambda x: f'{x:.3f}')
         dfs.append((ws, stock_df.loc[:, columns.keys()]))
     
-    with pd.ExcelWriter(label_file) as writer:
-        for ws, df in dfs:
-            df.to_excel(writer,
-                        sheet_name=ws,
-                        index=False,
-                        header=False)
+    while True:
+        try:
+            with pd.ExcelWriter(label_file) as writer:
+                    for ws, df in dfs:
+                        df.to_excel(writer,
+                                    sheet_name=ws,
+                                    index=True,
+                                    header=False)
+            break
+        except PermissionError:
+            print(f'---< Unable to save changes in {file} >---'.center(80))
+            print('Close the file and continue'.center(80))
+            system('pause')
 
     wb.close()
     print(f'File saved as {label_file}')
