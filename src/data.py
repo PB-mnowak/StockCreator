@@ -68,41 +68,7 @@ prot_attribs = ["ws_name",
                 "storage_buffer",
                 "storage_temperature",
                 "sequence",
-                "web_page",]
-
-        # self.ws_name = data.get("ws_name", None)
-        # self.name = data.get("name", None)
-        # self.id = data.get("id", None)
-        # self.sys_id = data.get("sys_id", None)
-        # self.description = data.get("description", "")
-        # self.owner_id = data.get("owner_id", None)
-        # self.alternative_name = data.get("alternative_name", None)
-        # self.gene = data.get("gene", None)
-        # self.species = data.get("species", None)
-        # self.mutations = data.get("mutations", None)
-        # self.chemical_modifications = data.get("chemical_modifications", None)
-        # self.tag = data.get("tag", None)
-        # self.purification_method = data.get("purification_method", None)
-        # self.mw = data.get("mw", None)
-        # self.iso_point = data.get("iso_point", None)
-        # self.extinction_ox = data.get("extinction_ox", None)
-        # self.extinction_red = data.get("extinction_red", None)
-        # # TODO refactor:
-        # if self.extinction_ox is not None and self.extinction_red is not None:
-        #     self.extinction_coefficient_280nm = f'{self.extinction_ox} (Ox) / {self.extinction_red} (Red)'
-        # else:
-        #     self.extinction_coefficient_280nm = None
-        # self.storage_buffer = data.get("storage_buffer", None)
-        # self.storage_temperature = data.get("storage_temperature", None)
-        # sequence = Seq(data.get("sequence", ""))
-        # self.sequence = str(sequence)
-        # if (uniprot_id := data.get("web_page", "")):
-        #     self.uniprot_id = uniprot_id
-        #     self.web_page = f"https://www.uniprot.org/uniprot/{uniprot_id}"
-        # else:
-        #     self.uniprot_id, self.web_page = None, None
-        # self.token = token
-        # if self.id is not None:
-        #     self.url = f'https://my.labguru.com/biocollections/proteins/{self.id}'
-        # else:
-        #     self.url = ''
+                "web_page",
+                "description",
+                "tag",
+                ]

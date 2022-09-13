@@ -19,7 +19,8 @@ class Protein:
         for attrib in prot_attribs:
             setattr(self, attrib, data.get(attrib, None))
 
-        self.sequence = str(Seq(data.get("sequence", "")))
+        sequence = data.get("sequence", "")
+        self.sequence = str(Seq(sequence)) if sequence is not None else ''
 
         ext_ox = f'{self.extinction_ox} (Ox)' if self.extinction_ox else ''
         ext_red = f'{self.extinction_red} (Red)' if self.extinction_ox else ''
@@ -54,7 +55,7 @@ class Protein:
                 "mw": f'{self.mw}{" Da" if self.mw else ""}',
                 "extinction_coefficient_280nm": self.extinction_coefficient_280nm,
                 "storage_buffer": self.storage_buffer,
-                "storage_temperature": self.storage_temp,
+                "storage_temperature": self.storage_temperature,
                 "sequence": self.sequence,
         }
         
@@ -113,9 +114,13 @@ class Protein:
         url = "https://my.labguru.com/api/v1/proteins"
         body = {"token": self.token,
                 "item": self.__generate_prot_item()}
-   
+
+        if not body['item'].get('name'):
+            return 0
+        
         session = requests.post(url, json=body)
-            
+        
+        # TODO Refactor
         if session.status_code == 201:
             try:
                 response = session.json()
@@ -129,9 +134,12 @@ class Protein:
                 self.class_name = response.get("class_name", None)
                 print(f'{self.sys_id:>10s} | {self.name:<50s} - New protein entry added')
             except Exception as e:
-                print(e)   
+                print(e)
+            finally:
+                return 1
         else:
             print(f'Error while handling {self.name} - Code {session.status_code}')
+            return 0
 
     def update_lg_record(self):
         url = f"https://my.labguru.com/api/v1/proteins/{self.id}"
@@ -335,15 +343,16 @@ class Protein:
                         ws.cell(row=row, column=column).value = value
 
     def calc_params(self):
-
-        self.len = len(self.sequence)
-        self.aa_distr()
-        if self.mw is None:
-            self.prot_mass()
-        if self.extinction_coefficient_280nm is None:
-            self.abs_coeff()
-        if self.iso_point is None:
-            self.pI()
+        
+        if (seq_len := len(self.sequence)) > 0:
+            self.len = seq_len
+            self.aa_distr()
+            if self.mw is None:
+                self.prot_mass()
+            if self.extinction_coefficient_280nm is None:
+                self.abs_coeff()
+            if self.iso_point is None:
+                self.pI()
         
     def aa_distr(self):
         self.aa_count = {aa: self.sequence.count(aa) for aa in aa_dict}

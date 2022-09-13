@@ -303,8 +303,8 @@ def add_to_lg():
         if params_flag:
             protein.calc_params()
         if protein.id is None:
-            protein.create_new_record()
-            prot_count += 1
+            status = protein.create_new_record()
+            prot_count += status
             
         protein.create_stocks(file)
         prot_list.append(protein)
