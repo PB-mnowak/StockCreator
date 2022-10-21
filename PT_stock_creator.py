@@ -1,11 +1,13 @@
 from os import listdir, getcwd, system
 from os.path import isfile, join
+from pathlib import Path
 from getpass import getpass
 from re import findall
 import requests
 import warnings
 
 from openpyxl import load_workbook
+# from pandas import ExcelWriter, DataFrame  # TODO reduce import
 import pandas as pd
 
 from src.classes import Protein, attrib_dict
@@ -18,19 +20,25 @@ from src.classes import Protein, attrib_dict
 # 5) if sequence - calculate mass, len, pI, A0.1%
 
 
+# API requests
+
+
+
 def main():
     system('cls')
+    
     global TOKEN
     global PB_ALL
 
+    # LG Token acquisition
     test_mode = select_mode()
-
     TOKEN = get_token(test_mode=test_mode)
-    # TOKEN = 'token'
-    PB_ALL = r'P:\_research group folders\PT Proteins\_PT_stock_creator'
+    
+    PB_ALL = Path(r'P:\_research group folders\PT Proteins\_PT_stock_creator')
 
     warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
 
+    # Main program loop
     while True:
         system('cls')
         menu_dict = {
@@ -43,27 +51,72 @@ def main():
             '4': ['Update excel records and stocks from Labguru',
                 update_from_lg],
             '5': ['Create excel file for label printing',
-                create_label_xlsx]
+                create_label_xlsx],
                 }
 
         # Print menu
         print_menu(menu_dict)
 
         user_input = input('\nSelect task number: ')
-        
-        if user_input.lower() == "q":
-            break
-        elif user_input in menu_dict:
+
+        if user_input in menu_dict:
             system('cls')
             menu_dict[user_input][1]()
             system('pause')
+        elif user_input.lower() == "q":
+            break
         else:
             print('---< Wrong input. Try again >---'.center(80))
             system('pause')
 
 # Helpers
 
+def get_token(test_mode=False):
+    """Acquires token from Labguru API
+
+    Args:
+        test_mode (bool, optional): Access test Labguru environment. Defaults to False.
+
+    Returns:
+       str: Token for API connection
+    """
+    print('\nEnter Labguru credentials: name (n.surname) and password')
+    while True:
+
+        if test_mode is True:
+            name = 'LG_User7@purebiologics.com'
+            password = 'LG_user7'
+        else:
+            name = input('Name: ').lower()
+            password = str(getpass('Password: '))
+        
+        body = {'login': name + '@purebiologics.com',
+                'password': password}
+        
+        message = '\nAcquiring authentication token'
+        print(f'{message.ljust(73, ".")}', end='')
+        
+        try:
+            session = requests.post('https://my.labguru.com/api/v1/sessions.json', body)
+            token = session.json()['token']
+            
+            if token and token != '-1':
+                print('SUCCESS')
+                break
+            else:
+                print('..ERROR')
+                print('Wrong login or password. Try again\n')
+        except Exception as e:
+            print(e)
+            
+    return token
+
 def select_mode():
+    """Selection of test mode for access to test Labguru environment
+
+    Returns:
+        bool: Test mode boolean flag
+    """
     while True:
         mode_selection = input('Test mode (Y/N): ').lower()
         if 'y' in mode_selection:
@@ -80,16 +133,21 @@ def print_menu(menu_dict):
         print('\n Q - Quit')
         print(''.center(80, '_'))
 
-def task_start(file = None):
-    print("/ Task in progress \\".center(80, '_'), '\n', sep='')
-    if file is not None:
-        print(f'File: {file}\n')
+# def task_start(file = None):
+#     print("/ Task in progress \\".center(80, '_'), '\n', sep='')
+#     if file is not None:
+#         print(f'File: {file}\n')
 
-def task_end():
-    "Prints a bar after ending a task"
-    print("\n", "\\ Task completed /".center(80, '‾'), '\n', sep="")
+# def task_end():
+#     "Prints a bar after ending a task"
+#     print("\n", "\\ Task completed /".center(80, '‾'), '\n', sep="")
 
 def pball_connection(file):
+    """Verifies if PB_all file is accessible
+
+    Args:
+        file (str): File name
+    """
     while True:
         if isfile(join(PB_ALL, file)):
             break        
@@ -97,38 +155,74 @@ def pball_connection(file):
             print('---< Template file not found: check connection to PB_all >---'.center(80))
             system('pause')
 
-def print_task(func):
+def task_frame(func):
     def wrap(*args, **kwargs):
-        task_start()
+
+        print("/ Task in progress \\".center(80, '_'), '\n', sep='')
         result = func(*args, **kwargs)
-        task_end()
+        print("\n", "\\ Task completed /".center(80, '‾'), '\n', sep="")
+        
         return result
     return wrap
 
 def get_path_file(ext: str):
+    """_summary_
+
+    Args:
+        ext (str): File format extension
+
+    Raises:
+        Exception: _description_
+
+    Returns:
+        mypath (str):   absolute path to directory of the file
+        file (str):     name of selected file
+    """
     mypath = getcwd()
     xlsx_list = scan_files(mypath, ext)
     file = choose_file(xlsx_list, ext)
     if file is None:
-        return mypath, None
+        raise Exception
 
+    system('cls')
+    print("/ Task in progress \\".center(80, '_'), '\n', sep='')
+    print(f'\nFile: {file}\n')
+    
     return mypath, file
+        
 
 def scan_files(path, ext):
-    """ Returns list of xlsx files in given path """
+    """Return list of all files in path with given extension
+
+    Args:
+        path (str): path to target directory
+        ext (str):  file extension
+
+    Returns:
+        list: list of files with given extension
+    """
     xlsx_list = [file for file in listdir(path) if check_filename(path, file, ext)]
     return xlsx_list
 
 def check_filename(path, file: str, ext: str):
-    """  """
+    """Return True if there is a non-temp file in given path with given extension else False
+
+    Args:
+        path (str): path to file location
+        file (str): file name
+        ext (str):  extension
+
+    Returns:
+        bool: True if non-temporary file exists in given location
+    """
     is_file = isfile(join(path, file))
-    is_xlsx = file.endswith(f'.{ext}')
+    is_ext = file.endswith(f'.{ext}')
     not_temp = not file.startswith('~$')
-    conditions = [is_file, is_xlsx, not_temp]
+    conditions = [is_file, is_ext, not_temp]
     return all(conditions)
 
 def choose_file(file_list: list, ext: str):
-    print('/ Select file \\'.center(80, '_'), '\n', sep='')
+    print('Select file:\n',)
     
     xlsx_dict = {str(i): file for i, file in enumerate(file_list, 1)}    
     for i, file in xlsx_dict.items():
@@ -149,10 +243,6 @@ def choose_file(file_list: list, ext: str):
     system('cls')
     
     return xlsx_dict[file_i]
-
-def scan_genebank(path):
-    gb_files = [f for f in listdir(path) if isfile(join(path, f)) and f.rpartition(".")[-1] == "gb"]
-    return gb_files
 
 def update_workbook(mypath, file, prot_list):
     while True:
@@ -192,15 +282,31 @@ def select_sheets(wb):
             print('---< Wrong input. Try again >---'.center(80))
             
 def protein_from_sheet_gen(wb):
+    """Yield Protein object from Workbook sheets
+
+    Args:
+        wb (openpyxl.Workbook): Workbook object from openpyxl
+
+    Yields:
+        Protein: Protein object based on data from Workbook sheet
+    """
     ws_selection = select_sheets(wb)
     for ws_name in ws_selection:
         ws = wb[ws_name]
         protein_data = get_protein_data(ws)
-        yield Protein(protein_data, TOKEN)
+        if protein_data.get('name'):
+            yield Protein(protein_data, TOKEN.token)
+        else:
+            continue
 
 def if_calc_params():
+    """Return boolean flag if protein parameters should be calculated based on user input
+
+    Returns:
+        bool: True if parameters should be calculated
+    """
     while True:
-        resp = input('Calculate protein parameters for proteins with added sequence? (Y/N): ').lower()
+        resp = input('Calculate protein parameters based on the provided sequence? (Y/N): ').lower()
         if 'y' in resp:
             return True
         elif 'n' in resp:
@@ -208,36 +314,6 @@ def if_calc_params():
         else:
             print('---< Wrong input. Try again >---'.center(80))
 
-# API requests
-
-def get_token(token=None, test_mode=False):
-    if token is None:
-        print('\nEnter Labguru credentials: name (n.surname) and password')
-        while True:
-
-            if test_mode is True:
-                name = 'LG_User7@purebiologics.com'
-                password = 'LG_user7'
-            else:
-                name = str(input('Name: ')).lower() + '@purebiologics.com'
-                password = str(getpass('Password: '))
-            
-            body = {'login': name,
-                    'password': password}
-            
-            message = '\nAcquiring authentication token'
-            print(f'{message.ljust(73, ".")}', end='')
-            
-            session = requests.post('https://my.labguru.com/api/v1/sessions.json', body)
-            token = session.json()['token']
-
-            if token and token != '-1':
-                print('SUCCESS')
-                break
-            else:
-                print('..ERROR')
-                print('Wrong login or password. Try again\n')
-    return token
 
 # TODO Move to Protein and refactor
 def get_protein_data(ws) -> dict:
@@ -261,7 +337,7 @@ def get_protein_data(ws) -> dict:
 
 # 1) New template
 
-@print_task
+@task_frame
 def generate_template():
     """ Create copy of template file stored on PB_all """
     template_file = 'templates\\PT stock creator_template.xlsx'
@@ -278,17 +354,16 @@ def generate_template():
 
 # 2) Add records and stocks
 
+@task_frame
 def add_to_lg():
     """
     
     """
-    
-    mypath, file = get_path_file('xlsx')
-    if file is None:
-        return None
-    
-    task_start(file)
-    
+    try:
+        mypath, file = get_path_file('xlsx')
+    except Exception:
+        return
+
     prot_list = []
     prot_count = 0
     params_flag = if_calc_params() # TODO add to method
@@ -300,11 +375,14 @@ def add_to_lg():
     #     protein_data = get_protein_data(ws)
     #     protein = Protein(protein_data, TOKEN)
     for protein in protein_from_sheet_gen(wb):
-        if params_flag:
-            protein.calc_params()
-        if protein.id is None:
-            status = protein.create_new_record()
-            prot_count += status
+        try:
+            if params_flag:
+                protein.calc_params()
+            if protein.id is None:
+                prot_count += protein.create_new_record()
+        except Exception as e:  # TODO set exceptions and message
+            print(e)
+            pass
             
         protein.create_stocks(file)
         prot_list.append(protein)
@@ -318,17 +396,15 @@ def add_to_lg():
     print(f'Protein entries created: {prot_count}')
     print(f'Stocks added:\t\t {stock_count:}\n')
     
-    task_end()
 
 # 3) Update existing records in Labguru
-
+@task_frame
 def update_to_lg():
 
-    mypath, file = get_path_file('xlsx')
-    if file is None:
-        return None
-    
-    task_start(file)
+    try:
+        mypath, file = get_path_file('xlsx')
+    except Exception:
+        return
     
     wb = load_workbook(join(mypath, file), data_only=True)
     for protein in protein_from_sheet_gen(wb):
@@ -336,35 +412,33 @@ def update_to_lg():
             protein.update_lg_record()
         protein.update_lg_stocks(file) # TODO wb->ws ?
     wb.close()
-
-    task_end()
+    
 
 # 4) Update excel file from Labguru records
 
+@task_frame
 def update_from_lg():
 
-    mypath, file = get_path_file('xlsx')
-    if file is None:
-        return None
-    
-    task_start(file)
+    try:
+        mypath, file = get_path_file('xlsx')
+    except Exception:
+        return
     
     prot_list = []
     
     wb = load_workbook(join(mypath, file), data_only=True)
     for protein in protein_from_sheet_gen(wb):
         if protein.id is not None:
-            protein.update_excel(wb)
+            protein.update_excel_record(wb)
             
-        protein.update_excel_stocks(file)
+        protein.update_excel_stocks(wb)
         prot_list.append(protein)
         
         update_workbook(mypath, file, prot_list)
 
-    task_end()
-
 # 5) Labels
 
+@task_frame
 def create_label_xlsx():
       
     mypath = getcwd()
@@ -373,8 +447,6 @@ def create_label_xlsx():
     file = choose_file(xlsx_list, ext)
     if file is None:
         return None
-    
-    task_start(file)
     
     wb = load_workbook(join(mypath, file), data_only=True)
     columns = {'Stock ID': int,
@@ -392,7 +464,7 @@ def create_label_xlsx():
     for protein in protein_from_sheet_gen(wb):
         stock_df = protein.get_stock_df(file).astype(columns)
         stock_df['Concentration'] = stock_df['Concentration'].map(lambda x: f'{x:.3f}')
-        dfs.append((ws, stock_df.loc[:, columns.keys()]))
+        dfs.append((protein.ws_name, stock_df.loc[:, columns.keys()]))
     
     while True:
         try:
@@ -410,7 +482,7 @@ def create_label_xlsx():
 
     wb.close()
     print(f'File saved as {label_file}')
-    task_end()
+
 
 if __name__ == '__main__':
     main()

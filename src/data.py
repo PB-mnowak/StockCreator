@@ -47,7 +47,8 @@ aa_dict = {
     'T': ('Thr', 'Threonine', 101.1051), 
     'W': ('Trp', 'Tryptophan', 186.2132), 
     'Y': ('Tyr', 'Tyrosine', 163.176), 
-    'V': ('Val', 'Valine', 99.1326)
+    'V': ('Val', 'Valine', 99.1326),
+    '*': ('Stop', 'Stop codon', 0.0)
     }
 
 prot_attribs = ["ws_name",
