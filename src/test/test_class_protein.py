@@ -147,7 +147,7 @@ def test_set_url():
 def test_generate_prot_item(test_lg_data):
     protein = Protein(test_lg_data, "test_token")
     prot_item = protein.generate_prot_item()
-    assert type(prot_item) is dict
+    assert isinstance(prot_item, dict)  # TODO improve
     
     
 if __name__ == "__main__":
