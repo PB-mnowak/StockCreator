@@ -39,8 +39,8 @@ class Token:
         if self.token is None:
             print('\nEnter Labguru credentials: name (n.surname) and password')
             if self.test_mode is True:
-                self.user = 'LG_User7@purebiologics.com'
-                self.password = 'LG_user7'
+                self.user = ''
+                self.password = ''
             else:
                 self.user = str(input('Name: ')).lower() + '@purebiologics.com'
                 self.password = str(getpass('Password: '))
